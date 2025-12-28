@@ -14,18 +14,18 @@ module purge
 module load hpcfund
 module list
 
-source $WORK/gepa_hotpotqa/venv/gepa/bin/activate
+source $WORK/venv/hotpotqa/bin/activate
 
 # Caches in $WORK
-export HF_HOME="$WORK/gepa_hotpotqa/cache/hf"
+export HF_HOME="$WORK/adBO/cache/hf"
 export HF_DATASETS_CACHE="$HF_HOME/datasets"
 export TRANSFORMERS_CACHE="$HF_HOME/transformers"
 export HUGGINGFACE_HUB_CACHE="$HF_HOME/hub"
-export XDG_CACHE_HOME="$WORK/gepa_hotpotqa/cache/xdg"
+export XDG_CACHE_HOME="$WORK/adBO/cache/xdg"
 mkdir -p "$HF_HOME" "$XDG_CACHE_HOME"
 
 RUN_ID="$(date +%Y%m%d_%H%M%S)"
-OUT_ROOT="$WORK/gepa_hotpotqa/runs/$RUN_ID"
+OUT_ROOT="$WORK/adBO/runs/$RUN_ID"
 mkdir -p "$OUT_ROOT"
 echo "OUT_ROOT=$OUT_ROOT"
 
@@ -65,9 +65,9 @@ for port in 8000 8001 8002; do
 done
 
 # Run your compare driver (NOTE: your compare script does NOT define --run_dir, so don't pass it)
-cd $WORK/gepa_hotpotqa/repo
+cd $WORK/adBO/repo
 
-python run_gepa_hotpotqa_compare.py \
+python run_adBO_compare.py \
   --out_root "$OUT_ROOT/logs" \
   --refresh_sec 20 \
   --stage_step 500 \
