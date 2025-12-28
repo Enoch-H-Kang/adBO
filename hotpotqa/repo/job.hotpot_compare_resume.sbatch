@@ -14,18 +14,18 @@ module purge
 module load hpcfund
 module list
 
-source $WORK/gepa_hotpotqa/venv/gepa/bin/activate
+source $WORK/venv/hotpotqa2/bin/activate
 
 # --- caches in $WORK (avoid $HOME quota) ---
-export HF_HOME="$WORK/gepa_hotpotqa/cache/hf"
+export HF_HOME="$WORK/adBO/cache/hf"
 export HF_DATASETS_CACHE="$HF_HOME/datasets"
 export TRANSFORMERS_CACHE="$HF_HOME/transformers"
 export HUGGINGFACE_HUB_CACHE="$HF_HOME/hub"
-export XDG_CACHE_HOME="$WORK/gepa_hotpotqa/cache/xdg"
+export XDG_CACHE_HOME="$WORK/adBO/cache/xdg"
 mkdir -p "$HF_HOME" "$XDG_CACHE_HOME"
 
 # --- resume-friendly output root ---
-OUT_ROOT="$WORK/gepa_hotpotqa/runs/latest"
+OUT_ROOT="$WORK/adBO/runs/latest"
 mkdir -p "$OUT_ROOT"
 
 # Stamp a small "run marker" so you can see last job time
@@ -104,11 +104,11 @@ done
 # --- run compare driver ---
 # IMPORTANT: we reuse OUT_ROOT/logs every time, so runs resume *within each variant*
 # as long as your worker uses run_dir for its GEPA log_dir and supports staged resume.
-cd $WORK/gepa_hotpotqa/repo
+cd $WORK/adBO/repo
 
 # Optional: store the exact command line for reproducibility
 cat > "$OUT_ROOT/driver_logs/last_command.txt" <<EOF
-python run_gepa_hotpotqa_compare.py \
+python run_adBO_compare.py \
   --out_root "$OUT_ROOT/logs" \
   --refresh_sec 20 \
   --stage_step 500 \
@@ -121,7 +121,7 @@ python run_gepa_hotpotqa_compare.py \
 EOF
 
 # Run and append output to a stable driver log
-python run_gepa_hotpotqa_compare.py \
+python run_adBO_compare.py \
 --out_root "$OUT_ROOT/logs" \
   --run_dir "$OUT_ROOT/logs/run" \
   --stage_step 500 \

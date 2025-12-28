@@ -14,7 +14,7 @@ module purge
 module load hpcfund
 module list
 
-source $WORK/venv/hotpotqa/bin/activate
+source $WORK/venv/hotpotqa2/bin/activate
 
 # Caches in $WORK
 export HF_HOME="$WORK/adBO/cache/hf"
