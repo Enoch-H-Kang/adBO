@@ -51,7 +51,10 @@ def configure_dspy_lm_from_vllm():
     Qwen3-8B via vLLM OpenAI-compatible endpoint.
     Paper-like decoding: temperature=0.6, top_p=0.95, ctx up to 16384 (server-side). 
     """
-    api_base = os.environ.get("VLLM_API_BASE", "http://127.0.0.1:8000/v1")
+    api_base = os.environ.get("VLLM_API_BASE")
+    if not api_base:
+        raise RuntimeError("VLLM_API_BASE is not set. Use --api_bases in the compare driver or export VLLM_API_BASE.")
+
     api_key = os.environ.get("VLLM_API_KEY", "EMPTY")
     model = os.environ.get("VLLM_MODEL", "Qwen/Qwen3-8B")
 

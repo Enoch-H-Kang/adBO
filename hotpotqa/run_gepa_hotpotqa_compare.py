@@ -137,8 +137,14 @@ def main():
 
     # Assign API bases (optional)
     api_bases = [s.strip() for s in args.api_bases.split(",") if s.strip()]
-    if len(api_bases) not in (0, 1, 3):
-        raise ValueError("--api_bases must be empty, length 1, or length 3.")
+    if len(api_bases) not in (1, 3):
+        raise ValueError(
+            "--api_bases is REQUIRED (len 1 or 3).\n"
+            "Examples:\n"
+            "  --api_bases http://127.0.0.1:18960/v1\n"
+            "  --api_bases http://127.0.0.1:18960/v1,http://127.0.0.1:18961/v1,http://127.0.0.1:18962/v1"
+        )
+
 
     procs = []
     for i, v in enumerate(variants):
