@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH -J hotpot_gepa_cmp
+#SBATCH -J hover_gepa_cmp
 #SBATCH -o %x.%j.out
 #SBATCH -e %x.%j.err
 #SBATCH -p mi2104x
@@ -26,7 +26,7 @@ export XDG_CACHE_HOME="$WORK/adBO/cache/xdg"
 mkdir -p "$HF_HOME" "$XDG_CACHE_HOME"
 
 RUN_ID="$(date +%Y%m%d_%H%M%S)"
-OUT_ROOT="$WORK/adBO/runs/hotpotqa_runs/$RUN_ID"
+OUT_ROOT="$WORK/adBO/runs/hover_runs/$RUN_ID"
 mkdir -p "$OUT_ROOT"
 
 # Redirect SLURM stdout/stderr to OUT_ROOT
@@ -102,15 +102,15 @@ echo "=============================="
 # ----------------------------
 # Run compare driver with correct api_bases
 # ----------------------------
-cd $WORK/adBO/hotpotqa
+cd $WORK/adBO/hover
 
-python run_gepa_hotpotqa_compare.py \
+python run_gepa_hover_compare.py \
   --out_root "$OUT_ROOT/logs" \
   --api_bases "$API0,$API1,$API2" \
   --refresh_sec 20 \
   --stage_step 500 \
   --seed 0 \
-  --max_metric_calls 10000 \
+  --max_metric_calls 6858 \
   --num_threads 12 \
   --retriever_threads 8
 

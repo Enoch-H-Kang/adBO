@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH -J hotpot_gepa_cmp
+#SBATCH -J ifbench_gepa_cmp
 #SBATCH -o %x.%j.out
 #SBATCH -e %x.%j.err
 #SBATCH -p mi2104x
@@ -25,13 +25,15 @@ export HUGGINGFACE_HUB_CACHE="$HF_HOME/hub"
 export XDG_CACHE_HOME="$WORK/adBO/cache/xdg"
 mkdir -p "$HF_HOME" "$XDG_CACHE_HOME"
 
-RUN_ID="$(date +%Y%m%d_%H%M%S)"
-OUT_ROOT="$WORK/adBO/runs/hotpotqa_runs/$RUN_ID"
+# Resume-friendly: use fixed "latest" folder instead of timestamped
+OUT_ROOT="$WORK/adBO/runs/ifbench_runs/latest"
 mkdir -p "$OUT_ROOT"
 
 # Redirect SLURM stdout/stderr to OUT_ROOT
 exec > "$OUT_ROOT/slurm_${SLURM_JOB_ID}.out" 2> "$OUT_ROOT/slurm_${SLURM_JOB_ID}.err"
 
+# Stamp run marker so you can see last job time
+date > "$OUT_ROOT/last_submit_time.txt"
 echo "OUT_ROOT=$OUT_ROOT"
 
 export VLLM_MODEL="Qwen/Qwen3-8B"
@@ -39,6 +41,14 @@ export VLLM_API_KEY="EMPTY"
 
 # Force ROCm device detection
 export VLLM_TARGET_DEVICE="rocm"
+
+# Optional: clean restart (set CLEAN=1 when submitting)
+#   CLEAN=1 sbatch job.ifbench_compare_resume.sbatch
+if [[ "${CLEAN:-0}" == "1" ]]; then
+  echo "[CLEAN=1] Removing previous curves/plots (keeping caches) ..."
+  rm -rf "$OUT_ROOT/logs" || true
+  rm -f "$OUT_ROOT/comparison_live.png" "$OUT_ROOT/comparison.png" "$OUT_ROOT/comparison_curves.csv" || true
+fi
 
 echo "==== rocm-smi (sanity) ===="
 rocm-smi || true
@@ -65,17 +75,17 @@ echo "$API0,$API1,$API2" > "$OUT_ROOT/api_bases.txt"
 export HIP_VISIBLE_DEVICES=0
 srun -n 1 --exact \
   bash -lc "vllm serve \"$VLLM_MODEL\" --host 127.0.0.1 --port ${PORT0} --api-key \"$VLLM_API_KEY\" --max-model-len 16384 --disable-v1" \
-  > "$OUT_ROOT/vllm_${PORT0}.log" 2>&1 &
+  >> "$OUT_ROOT/vllm_${PORT0}.log" 2>&1 &
 
 export HIP_VISIBLE_DEVICES=1
 srun -n 1 --exact \
   bash -lc "vllm serve \"$VLLM_MODEL\" --host 127.0.0.1 --port ${PORT1} --api-key \"$VLLM_API_KEY\" --max-model-len 16384 --disable-v1" \
-  > "$OUT_ROOT/vllm_${PORT1}.log" 2>&1 &
+  >> "$OUT_ROOT/vllm_${PORT1}.log" 2>&1 &
 
 export HIP_VISIBLE_DEVICES=2
 srun -n 1 --exact \
   bash -lc "vllm serve \"$VLLM_MODEL\" --host 127.0.0.1 --port ${PORT2} --api-key \"$VLLM_API_KEY\" --max-model-len 16384 --disable-v1" \
-  > "$OUT_ROOT/vllm_${PORT2}.log" 2>&1 &
+  >> "$OUT_ROOT/vllm_${PORT2}.log" 2>&1 &
 
 # ----------------------------
 # Wait for servers
@@ -102,16 +112,15 @@ echo "=============================="
 # ----------------------------
 # Run compare driver with correct api_bases
 # ----------------------------
-cd $WORK/adBO/hotpotqa
+cd $WORK/adBO/ifbench
 
-python run_gepa_hotpotqa_compare.py \
+python run_gepa_ifbench_compare.py \
   --out_root "$OUT_ROOT/logs" \
   --api_bases "$API0,$API1,$API2" \
   --refresh_sec 20 \
   --stage_step 500 \
   --seed 0 \
   --max_metric_calls 10000 \
-  --num_threads 12 \
-  --retriever_threads 8
+  --num_threads 12
 
 echo "Done. Outputs in: $OUT_ROOT/logs"

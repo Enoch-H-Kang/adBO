@@ -1,0 +1,33 @@
+# Core Dependencies for GEPA Projects (HotpotQA, PUPA, IFBench)
+# Python >= 3.10 required
+
+# DSPy Framework
+dspy-ai>=3.0.0
+
+# HuggingFace Ecosystem
+datasets>=2.14.0
+transformers>=4.30.0
+huggingface-hub>=0.16.0
+
+# BM25 Retrieval (for HotpotQA)
+bm25s>=0.2.0
+PyStemmer>=2.2.0.1
+
+# Data Processing
+ujson>=5.0.0
+pandas>=2.0.0
+
+# Plotting (for comparison scripts)
+matplotlib>=3.7.0
+numpy>=1.24.0
+
+# HTTP/API Clients (for vLLM)
+requests>=2.31.0
+httpx>=0.24.0
+
+# Progress bars
+tqdm>=4.65.0
+
+# Optional but recommended
+scikit-learn>=1.3.0  # for evaluation metrics
+scipy>=1.11.0  # for scientific computing

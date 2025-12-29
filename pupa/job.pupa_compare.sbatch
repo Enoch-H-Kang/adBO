@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH -J hotpot_gepa_cmp
+#SBATCH -J pupa_gepa_cmp
 #SBATCH -o %x.%j.out
 #SBATCH -e %x.%j.err
 #SBATCH -p mi2104x
@@ -26,7 +26,7 @@ export XDG_CACHE_HOME="$WORK/adBO/cache/xdg"
 mkdir -p "$HF_HOME" "$XDG_CACHE_HOME"
 
 RUN_ID="$(date +%Y%m%d_%H%M%S)"
-OUT_ROOT="$WORK/adBO/runs/hotpotqa_runs/$RUN_ID"
+OUT_ROOT="$WORK/adBO/runs/pupa_runs/$RUN_ID"
 mkdir -p "$OUT_ROOT"
 
 # Redirect SLURM stdout/stderr to OUT_ROOT
@@ -64,17 +64,17 @@ echo "$API0,$API1,$API2" > "$OUT_ROOT/api_bases.txt"
 # ----------------------------
 export HIP_VISIBLE_DEVICES=0
 srun -n 1 --exact \
-  bash -lc "vllm serve \"$VLLM_MODEL\" --host 127.0.0.1 --port ${PORT0} --api-key \"$VLLM_API_KEY\" --max-model-len 16384 --disable-v1" \
+  bash -lc "vllm serve \"$VLLM_MODEL\" --host 127.0.0.1 --port ${PORT0} --api-key \"$VLLM_API_KEY\" --max-model-len 24576 --disable-v1" \
   > "$OUT_ROOT/vllm_${PORT0}.log" 2>&1 &
 
 export HIP_VISIBLE_DEVICES=1
 srun -n 1 --exact \
-  bash -lc "vllm serve \"$VLLM_MODEL\" --host 127.0.0.1 --port ${PORT1} --api-key \"$VLLM_API_KEY\" --max-model-len 16384 --disable-v1" \
+  bash -lc "vllm serve \"$VLLM_MODEL\" --host 127.0.0.1 --port ${PORT1} --api-key \"$VLLM_API_KEY\" --max-model-len 24576 --disable-v1" \
   > "$OUT_ROOT/vllm_${PORT1}.log" 2>&1 &
 
 export HIP_VISIBLE_DEVICES=2
 srun -n 1 --exact \
-  bash -lc "vllm serve \"$VLLM_MODEL\" --host 127.0.0.1 --port ${PORT2} --api-key \"$VLLM_API_KEY\" --max-model-len 16384 --disable-v1" \
+  bash -lc "vllm serve \"$VLLM_MODEL\" --host 127.0.0.1 --port ${PORT2} --api-key \"$VLLM_API_KEY\" --max-model-len 24576 --disable-v1" \
   > "$OUT_ROOT/vllm_${PORT2}.log" 2>&1 &
 
 # ----------------------------
@@ -102,16 +102,16 @@ echo "=============================="
 # ----------------------------
 # Run compare driver with correct api_bases
 # ----------------------------
-cd $WORK/adBO/hotpotqa
+cd $WORK/adBO/pupa
 
-python run_gepa_hotpotqa_compare.py \
+python run_gepa_pupa_compare.py \
   --out_root "$OUT_ROOT/logs" \
   --api_bases "$API0,$API1,$API2" \
+  --work_dir "$WORK/adBO/pupa/data" \
   --refresh_sec 20 \
   --stage_step 500 \
   --seed 0 \
-  --max_metric_calls 10000 \
-  --num_threads 12 \
-  --retriever_threads 8
+  --max_metric_calls 1000 \
+  --num_threads 12
 
 echo "Done. Outputs in: $OUT_ROOT/logs"

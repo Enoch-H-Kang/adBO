@@ -1,0 +1,4 @@
+#When resuming, bash resume_submit.sh
+
+#To activate venv
+source $WORK/venv/hotpotqa2/bin/activate
