@@ -121,7 +121,6 @@ python run_gepa_hotpotqa_compare.py \
   --stage_step 500 \
   --seed 0 \
   --max_metric_calls 10000 \
-  --num_threads 12 \
-  --retriever_threads 8
+  --num_threads 12
 
 echo "Done. Outputs in: $OUT_ROOT/logs"

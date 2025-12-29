@@ -11,7 +11,7 @@ python run_gepa_hotpotqa_compare.py \
   --seed 0 \
   --max_metric_calls 10000 \
   --num_threads 16 \
-  --retriever_threads 8
+  
 
 
 

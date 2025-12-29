@@ -31,3 +31,29 @@ Waiting for vLLM servers...
   vLLM on 19572 is up.
 === vLLM /v1/models sanity ===
 {"object":"list","data":[{"id":"Qwen/Qwen3-8B","object":"model","created":1766982062,"owned_by":"vllm","root":"Qwen/Qwen3-8B","parent":null,"max_model_len":16384,"permission":[{"id":"modelperm-67ff48a8629d4ce891f8af3cea566f49","object":"model_permission","created":1766982062,"allow_create_engine":false,"allow_sampling":true,"allow_logprobs":true,"allow_search_indices":false,"allow_view":true,"allow_fine_tuning":false,"organization":"*","group":null,"is_blocking":false}]}]}{"object":"list","data":[{"id":"Qwen/Qwen3-8B","object":"model","created":1766982062,"owned_by":"vllm","root":"Qwen/Qwen3-8B","parent":null,"max_model_len":16384,"permission":[{"id":"modelperm-24815a6bd2df478aa2c473d320171157","object":"model_permission","created":1766982062,"allow_create_engine":false,"allow_sampling":true,"allow_logprobs":true,"allow_search_indices":false,"allow_view":true,"allow_fine_tuning":false,"organization":"*","group":null,"is_blocking":false}]}]}{"object":"list","data":[{"id":"Qwen/Qwen3-8B","object":"model","created":1766982062,"owned_by":"vllm","root":"Qwen/Qwen3-8B","parent":null,"max_model_len":16384,"permission":[{"id":"modelperm-beb3631fd79d49a1b509ae2cd6311741","object":"model_permission","created":1766982062,"allow_create_engine":false,"allow_sampling":true,"allow_logprobs":true,"allow_search_indices":false,"allow_view":true,"allow_fine_tuning":false,"organization":"*","group":null,"is_blocking":false}]}]}==============================
+
+----------------------------------------------------------------------
+Omnistat Report Card for Job Id: 258157
+----------------------------------------------------------------------
+
+Job Overview (Num Nodes = 1, Machine = HPC Fund)
+ --> Start time = 2025-12-28 22:19:48
+ --> End   time = 2025-12-29 02:26:18
+ --> Duration   = 14790 secs
+
+GPU Statistics:
+
+           | Utilization (%)  |  Memory Use (%)  | Temperature (C)  |    Power (W)     | Energy (kWh) |
+     GPU # |    Max     Mean  |    Max     Mean  |    Max     Mean  |    Max     Mean  |    Total     |
+    ---------------------------------------------------------------------------------------------------
+         0 |  100.00    5.78  |   90.31   89.95  |   61.00   56.32  |  244.00  191.54  |   7.88e-01   |
+         1 |  100.00   94.01  |   90.31   89.95  |   63.00   60.43  |  242.00  188.88  |   7.77e-01   |
+         2 |  100.00   93.52  |   90.32   89.77  |   69.00   64.14  |  253.00  181.40  |   7.46e-01   |
+         3 |    0.00    0.00  |    0.02    0.02  |   47.00   43.34  |   41.00   40.03  |   1.64e-01   |
+
+Approximate Total GPU Energy Consumed = 2.47e+00 kWh
+
+--
+Query interval = 30.000 secs
+Query execution time = 0.7 secs
+Version = 1.8.0
