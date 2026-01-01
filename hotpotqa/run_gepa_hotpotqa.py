@@ -31,10 +31,15 @@ import argparse
 import csv
 import json
 import os
+import sys
 from pathlib import Path
 
 import dspy
 from dspy.evaluate import Evaluate
+
+# Add parent directory to path to import vllm_utils
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from vllm_utils import configure_vllm_with_health_check
 
 from hotpot_data import load_hotpotqa_splits
 from hotpot_metric import (
@@ -48,31 +53,21 @@ from wiki_retriever import build_or_load_bm25, make_search_fn
 
 def configure_dspy_lm_from_vllm():
     """
-    Qwen3-8B via vLLM OpenAI-compatible endpoint.
-    Paper-like decoding: temperature=0.6, top_p=0.95, ctx up to 16384 (server-side). 
+    Qwen3-8B via vLLM OpenAI-compatible endpoint with health checking.
+    Paper-like decoding: temperature=0.6, top_p=0.95, ctx up to 16384 (server-side).
+
+    This will wait for the vLLM server to be available on startup and
+    includes retry logic for connection stability.
     """
-    api_base = os.environ.get("VLLM_API_BASE")
-    if not api_base:
-        raise RuntimeError("VLLM_API_BASE is not set. Use --api_bases in the compare driver or export VLLM_API_BASE.")
-
-    api_key = os.environ.get("VLLM_API_KEY", "EMPTY")
-    model = os.environ.get("VLLM_MODEL", "Qwen/Qwen3-8B")
-
-    lm = dspy.LM(
-        f"openai/{model}",
-        api_base=api_base,
-        api_key=api_key,
-        model_type="chat",
+    return configure_vllm_with_health_check(
         temperature=0.6,
         top_p=0.95,
-        # top_k=20,  # pass only if supported; otherwise set server-side
-        # keep outputs generous; actual limit is still bounded by model context
-        max_tokens=8192,
-        cache=False,
-        num_retries=3,
+        max_tokens=None,  # Let vLLM dynamically allocate
+        num_retries=10,
+        timeout=300,
+        wait_on_startup=True,
+        startup_wait_time=300,  # Wait up to 5 minutes for server on startup
     )
-    dspy.configure(lm=lm)
-    return lm
 
 
 def write_curve_csv(curve, path: Path):
@@ -100,7 +95,7 @@ def main():
     ap = argparse.ArgumentParser()
 
     ap.add_argument("--seed", type=int, default=0)
-    ap.add_argument("--k_per_hop", type=int, default=5)
+    ap.add_argument("--k_per_hop", type=int, default=7)
 
     # Required by the compare driver: each variant writes into its own run_dir.
     ap.add_argument(
@@ -211,11 +206,22 @@ def main():
     student = HotpotMultiHopQA(search_fn=search_fn, k_per_hop=args.k_per_hop)
 
     # -----------------------
-    # Baseline
+    # Baseline (skip if resuming with cached value)
     # -----------------------
-    evaluator_dev = Evaluate(devset=dev, metric=hotpot_em_score, num_threads=args.num_threads, display_progress=True)
-    baseline_dev = evaluator_dev(student).score
-    print(f"[BASELINE] dev EM: {baseline_dev * 100:.2f}")
+    baseline_cache = run_dir / "baseline.json"
+    checkpoint_exists = (gepa_log_dir / "gepa_state.bin").exists()
+
+    if checkpoint_exists and baseline_cache.exists():
+        # Resume: load cached baseline
+        cached = json.loads(baseline_cache.read_text(encoding="utf-8"))
+        baseline_dev = cached["baseline_dev"]
+        print(f"[BASELINE] (cached) dev EM: {baseline_dev * 100:.2f}")
+    else:
+        # Fresh run: compute baseline and cache it
+        evaluator_dev = Evaluate(devset=dev, metric=hotpot_em_score, num_threads=args.num_threads, display_progress=True)
+        baseline_dev = evaluator_dev(student).score
+        baseline_cache.write_text(json.dumps({"baseline_dev": baseline_dev}), encoding="utf-8")
+        print(f"[BASELINE] dev EM: {baseline_dev * 100:.2f}")
 
     # -----------------------
     # GEPA factory
@@ -240,6 +246,9 @@ def main():
             seed=args.seed,
             **extra_gepa,
         )
+
+    # Create evaluator for use in evaluate_and_write
+    evaluator_dev = Evaluate(devset=dev, metric=hotpot_em_score, num_threads=args.num_threads, display_progress=True)
 
     def evaluate_and_write(optimized):
         # Evaluate optimized on dev/test
