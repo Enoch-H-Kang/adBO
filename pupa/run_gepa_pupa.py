@@ -18,21 +18,26 @@ python run_gepa_pupa.py \
 
 '''
 
-# run_gepa_pupa.py
+# run_gepa_pupa.py - PUPA benchmark using original PAPILLON
 from __future__ import annotations
 
 import argparse
 import csv
 import json
 import os
+import sys
 from pathlib import Path
 
 import dspy
 from dspy.evaluate import Evaluate
 
+# Add parent directory to path to import vllm_utils
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from vllm_utils import configure_vllm_with_health_check
+
 from pupa_data import load_pupa_splits
 from pupa_metric import (
-    pupa_aggregate_score,
+    pupa_score,
     pupa_metric_with_feedback,
     build_best_so_far_curve_from_detailed_results,
 )
@@ -41,29 +46,21 @@ from pupa_program import create_pupa_program
 
 def configure_dspy_lm_from_vllm():
     """
-    Qwen3-8B via vLLM OpenAI-compatible endpoint.
+    Qwen3-8B via vLLM OpenAI-compatible endpoint with health checking.
     Paper-like decoding: temperature=0.6, top_p=0.95, ctx up to 16384 (server-side).
+
+    This will wait for the vLLM server to be available on startup and
+    includes retry logic for connection stability.
     """
-    api_base = os.environ.get("VLLM_API_BASE")
-    if not api_base:
-        raise RuntimeError("VLLM_API_BASE is not set. Use --api_bases in the compare driver or export VLLM_API_BASE.")
-
-    api_key = os.environ.get("VLLM_API_KEY", "EMPTY")
-    model = os.environ.get("VLLM_MODEL", "Qwen/Qwen3-8B")
-
-    lm = dspy.LM(
-        f"openai/{model}",
-        api_base=api_base,
-        api_key=api_key,
-        model_type="chat",
+    return configure_vllm_with_health_check(
         temperature=0.6,
         top_p=0.95,
-        max_tokens=4096,  # Reduced from 8192 to avoid context window overflow (16384 total - ~10k for input = ~6k safe, using 4k)
-        cache=False,
-        num_retries=5,  # Increased from 3 to handle more connection errors
+        max_tokens=None,  # Let vLLM dynamically allocate
+        num_retries=10,
+        timeout=300,
+        wait_on_startup=True,
+        startup_wait_time=300,  # Wait up to 5 minutes for server on startup
     )
-    dspy.configure(lm=lm)
-    return lm
 
 
 def write_curve_csv(curve, path: Path):
@@ -178,21 +175,32 @@ def main():
     lm = configure_dspy_lm_from_vllm()
 
     # -----------------------
-    # Data (111/111/221)
+    # Data (111/111/221) - reuses pupa/data/
     # -----------------------
     train, dev, test = load_pupa_splits(seed=args.seed, data_dir=args.work_dir)
 
     # -----------------------
-    # Program (PAPILLON pipeline)
+    # Program (Original PAPILLON pipeline)
     # -----------------------
     student = create_pupa_program()
 
     # -----------------------
-    # Baseline
+    # Baseline (skip if resuming with cached value)
     # -----------------------
-    evaluator_dev = Evaluate(devset=dev, metric=pupa_aggregate_score, num_threads=args.num_threads, display_progress=True)
-    baseline_dev = evaluator_dev(student).score
-    print(f"[BASELINE] dev aggregate score: {baseline_dev * 100:.2f}")
+    baseline_cache = run_dir / "baseline.json"
+    checkpoint_exists = (gepa_log_dir / "gepa_state.bin").exists()
+
+    if checkpoint_exists and baseline_cache.exists():
+        # Resume: load cached baseline
+        cached = json.loads(baseline_cache.read_text(encoding="utf-8"))
+        baseline_dev = cached["baseline_dev"]
+        print(f"[BASELINE] (cached) dev aggregate score: {baseline_dev * 100:.2f}")
+    else:
+        # Fresh run: compute baseline and cache it
+        evaluator_dev = Evaluate(devset=dev, metric=pupa_score, num_threads=args.num_threads, display_progress=True)
+        baseline_dev = evaluator_dev(student).score
+        baseline_cache.write_text(json.dumps({"baseline_dev": baseline_dev}), encoding="utf-8")
+        print(f"[BASELINE] dev aggregate score: {baseline_dev * 100:.2f}")
 
     # -----------------------
     # GEPA factory
@@ -216,12 +224,15 @@ def main():
             **extra_gepa,
         )
 
+    # Create evaluator for use in evaluate_and_write
+    evaluator_dev = Evaluate(devset=dev, metric=pupa_score, num_threads=args.num_threads, display_progress=True)
+
     def evaluate_and_write(optimized):
         # Evaluate optimized on dev/test
         opt_dev = evaluator_dev(optimized).score
         evaluator_test = Evaluate(
             devset=test,
-            metric=pupa_aggregate_score,
+            metric=pupa_score,
             num_threads=args.num_threads,
             display_progress=True,
         )

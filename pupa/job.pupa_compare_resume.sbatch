@@ -55,9 +55,9 @@ rocm-smi || true
 echo "==========================="
 
 # ----------------------------
-# Pick collision-free ports (avoid 8000)
+# Pick collision-free ports (using 22000 for pupa)
 # ----------------------------
-BASE_PORT=$(( 18000 + (SLURM_JOB_ID % 1000) * 10 ))
+BASE_PORT=$(( 22000 + (SLURM_JOB_ID % 1000) * 10 ))
 PORT0=$((BASE_PORT + 0))
 PORT1=$((BASE_PORT + 1))
 PORT2=$((BASE_PORT + 2))
@@ -71,20 +71,21 @@ echo "$API0,$API1,$API2" > "$OUT_ROOT/api_bases.txt"
 
 # ----------------------------
 # Start 3 vLLM servers on 3 GPUs using srun
+# NOTE: Use inline env var (HIP_VISIBLE_DEVICES=X srun ...) to avoid race condition
+# with backgrounded commands. Using "export" before "&" causes all processes to
+# potentially see the same (last) value since exports happen before sruns start.
 # ----------------------------
-export HIP_VISIBLE_DEVICES=0
-srun -n 1 --exact \
-  bash -lc "vllm serve \"$VLLM_MODEL\" --host 127.0.0.1 --port ${PORT0} --api-key \"$VLLM_API_KEY\" --max-model-len 24576 --disable-v1" \
+# NOTE: Using GPUs 0, 2, 3 (skipping GPU 1 which is unreliable)
+HIP_VISIBLE_DEVICES=0 srun -n 1 --exact \
+  $WORK/venv/hotpotqa2/bin/vllm serve "$VLLM_MODEL" --host 127.0.0.1 --port ${PORT0} --api-key "$VLLM_API_KEY" --max-model-len 24576 -O 0 \
   >> "$OUT_ROOT/vllm_${PORT0}.log" 2>&1 &
 
-export HIP_VISIBLE_DEVICES=1
-srun -n 1 --exact \
-  bash -lc "vllm serve \"$VLLM_MODEL\" --host 127.0.0.1 --port ${PORT1} --api-key \"$VLLM_API_KEY\" --max-model-len 24576 --disable-v1" \
+HIP_VISIBLE_DEVICES=2 srun -n 1 --exact \
+  $WORK/venv/hotpotqa2/bin/vllm serve "$VLLM_MODEL" --host 127.0.0.1 --port ${PORT1} --api-key "$VLLM_API_KEY" --max-model-len 24576 -O 0 \
   >> "$OUT_ROOT/vllm_${PORT1}.log" 2>&1 &
 
-export HIP_VISIBLE_DEVICES=2
-srun -n 1 --exact \
-  bash -lc "vllm serve \"$VLLM_MODEL\" --host 127.0.0.1 --port ${PORT2} --api-key \"$VLLM_API_KEY\" --max-model-len 24576 --disable-v1" \
+HIP_VISIBLE_DEVICES=3 srun -n 1 --exact \
+  $WORK/venv/hotpotqa2/bin/vllm serve "$VLLM_MODEL" --host 127.0.0.1 --port ${PORT2} --api-key "$VLLM_API_KEY" --max-model-len 24576 -O 0 \
   >> "$OUT_ROOT/vllm_${PORT2}.log" 2>&1 &
 
 # ----------------------------
@@ -121,7 +122,7 @@ python run_gepa_pupa_compare.py \
   --refresh_sec 20 \
   --stage_step 500 \
   --seed 0 \
-  --max_metric_calls 1000 \
+  --max_metric_calls 10000 \
   --num_threads 12
 
 echo "Done. Outputs in: $OUT_ROOT/logs"

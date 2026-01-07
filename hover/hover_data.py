@@ -47,28 +47,37 @@ def load_hover_splits(
     n_dev: int = 300,
     n_test: int = 300,
     *,
-    require_num_hops: int | None = None,
-    max_num_hops: int | None = 3,
+    require_unique_docs: int | None = 3,  # Filter by unique gold doc count (LangProbe style)
 ):
     """
     Loads HoVer examples and creates deterministic 150/300/300 splits.
 
-    - require_num_hops: only keep examples with exactly this num_hops (optional)
-    - max_num_hops: only keep examples with num_hops <= this (default: 3, matching "up to 3-hop")
+    Following LangProbe implementation:
+    - Filters by count of UNIQUE gold documents (not num_hops metadata field)
+    - require_unique_docs=3 means exactly 3 unique supporting documents
+    - This matches the GEPA paper benchmark setup
+
+    - require_unique_docs: only keep examples with exactly this many unique gold docs (default: 3)
     """
-    ds = load_dataset("vincentkoc/hover-parquet", split="train")
+    # Use HoVer dataset from HuggingFace
+    # Note: Official hover-nlp/hover uses deprecated loading scripts
+    # Using parquet version which has the same data in standard format
+    try:
+        # Try parquet version first (standard format, no scripts)
+        ds = load_dataset("vincentkoc/hover-parquet", split="train")
+    except Exception as e:
+        print(f"[HoVer] Warning: Could not load parquet version: {e}")
+        # Fallback: try to download and use local data
+        raise RuntimeError(
+            "HoVer dataset loading failed. The official hover-nlp/hover dataset uses "
+            "deprecated loading scripts. Please use vincentkoc/hover-parquet or "
+            "download the data manually from https://hover-nlp.github.io/"
+        )
 
     pool = []
     seen_hpqa = set()
 
     for x in ds:
-        hops = x.get("num_hops", None)
-
-        if require_num_hops is not None and hops != require_num_hops:
-            continue
-        if max_num_hops is not None and isinstance(hops, int) and hops > max_num_hops:
-            continue
-
         hid = x.get("hpqa_id")
         if hid and hid in seen_hpqa:
             continue
@@ -79,12 +88,15 @@ def load_hover_splits(
         if not titles:
             continue
 
+        # Filter by unique gold document count (matching LangProbe's count_unique_docs)
+        if require_unique_docs is not None and len(titles) != require_unique_docs:
+            continue
+
         pool.append(
             dspy.Example(
                 claim=x["claim"],
                 titles=titles,
                 hpqa_id=hid,
-                num_hops=hops,
             ).with_inputs("claim")
         )
 

@@ -50,11 +50,8 @@ def main():
     search_fn = make_search_fn(corpus, retriever, stemmer, n_threads=2)
 
     # GEPA paper uses 150/300/300 for HoVer
-    # If you updated your loader to support max_num_hops, this will use it; otherwise it falls back.
-    try:
-        train, dev, test = load_hover_splits(seed=0, n_train=150, n_dev=300, n_test=300, max_num_hops=3)
-    except TypeError:
-        train, dev, test = load_hover_splits(seed=0, n_train=150, n_dev=300, n_test=300)
+    # LangProbe filters by unique gold document count (require_unique_docs=3)
+    train, dev, test = load_hover_splits(seed=0, n_train=150, n_dev=300, n_test=300, require_unique_docs=3)
 
     prog = HoverMultiHop(search_fn=search_fn, k_per_hop=5)
 

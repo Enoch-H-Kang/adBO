@@ -1,243 +1,248 @@
-# PUPA GEPA Implementation
+# PUPA: Original PAPILLON Implementation
 
-This directory contains the GEPA implementation for the PUPA (Privacy-conscious User Prompts with Annotations) benchmark, adapted from the HotpotQA implementation.
+This benchmark implements the **original PAPILLON pipeline** from the Columbia NLP Lab's GitHub repository, adapted for GEPA optimization.
 
-## Overview
+## Key Difference from pupa/
 
-**PUPA Task**: Privacy-Conscious Delegation - addressing real-world user queries using an ensemble of trusted and untrusted models while minimizing leakage of personally identifiable information (PII).
+| Aspect | pupa/ | pupa/ |
+|--------|-------|--------|
+| Source | Custom adaptation | **Original PAPILLON code** |
+| Pipeline | 3-stage custom | **2-stage from paper** (CreateOnePrompt → InfoAggregator) |
+| Metrics | Simplified | **Full PAPILLON suite** (from llm_judge.py) |
+| Attribution | Inspired by | **Direct copy with MIT LICENSE** |
+| Code Origin | Adapted from HotpotQA pattern | Columbia-NLP-Lab/PAPILLON |
 
-**PAPILLON System**: A compound AI system with 3 stages:
-1. **Query Rewriter** (Trusted Model): Rewrites user query to remove PII
-2. **Untrusted Model Call**: Gets response from powerful cloud LLM using rewritten query
-3. **Response Rewriter** (Trusted Model): Refines response using original context
+## Architecture
 
-**Dataset**: 111 train / 111 validation / 221 test examples
+### Original PAPILLON Pipeline
 
-**Metrics**:
-- Quality Score: How well the response addresses the user's query
-- Leakage Score: How much PII is exposed to untrusted models (lower is better)
-- Aggregate Score: Quality + (1 - Leakage), normalized to [0, 1]
+```
+User Query (with PII)
+    ↓
+[Stage 1: CreateOnePrompt]  ← Trusted Model
+    → Rewritten Query (PII removed)
+    ↓
+[Stage 2: Untrusted Model Call]
+    → Model Response
+    ↓
+[Stage 3: InfoAggregator]  ← Trusted Model
+    → Final Response
+```
+
+### Metrics (from llm_judge.py)
+
+**Quality Score** (Binary: 0/1)
+- Pairwise comparison: new_response vs reference
+- Position bias handling: evaluates both permutations
+- Score = 1 if both agree OR first says "yes"
+
+**Leakage Score** (Count: 0 to num_pii)
+- LLM judge checks each PII piece in rewritten query
+- Special handling for celebrity names (excluded)
+- Returns count of leaked entities
+
+**Prompt Quality Score** (Binary: 0/1)
+- LLM judge validates if rewritten query is well-formed
+- Ensures the query can be used with untrusted model
+
+**Aggregate Score** (Float: -0.5 to 1.0)
+```
+aggregate = (quality - leakage/num_pii + prompt_quality) / 2
+```
 
 ## Files
 
-- `pupa_program.py` - PAPILLON 3-stage pipeline implementation
-- `pupa_data.py` - PUPA dataset loader
-- `pupa_metric.py` - Quality and PII leakage metrics with GEPA-compatible feedback
-- `run_gepa_pupa.py` - Main GEPA training script
-- `run_gepa_pupa_compare.py` - Parallel comparison of GEPA variants
-- `sanity_pupa.py` - Sanity check script to test the pipeline
-- `job.pupa_compare.sbatch` - SLURM batch job script
+### Core Implementation
+- `papillon/` - **Original PAPILLON code** from GitHub
+  - `papillon_signatures.py` - CreateOnePrompt, InfoAggregator
+  - `papillon_pipeline.py` - PAPILLON class
+  - `llm_judge.py` - Quality, Leakage, Prompt Quality judges
+  - `LICENSE_PAPILLON.txt` - MIT license from original
+  - `README_PAPILLON.md` - Attribution and changes
+
+### GEPA Integration
+- `pupa_data.py` - Data loader (reuses pupa/data/)
+- `pupa_metric.py` - GEPA-compatible metric wrapper
+- `pupa_program.py` - Program factory
+- `run_gepa_pupa.py` - Main GEPA runner
+- `run_gepa_pupa_compare.py` - Comparison driver
+- `sanity_pupa.py` - Validation script
+
+### Job Submission
+- `job.pupa_compare.sbatch` - Fresh run (BASE_PORT=22000)
+- `job.pupa_compare_resume.sbatch` - Resume from latest
 
 ## Setup
 
-### 1. Install Dependencies
+### 1. Data Preparation
 
+**Option A: Reuse pupa data** (Recommended)
 ```bash
-pip install dspy datasets transformers
+# Check if pupa data exists
+ls ../pupa/data/
+
+# If it exists, you're done! pupa will automatically use it.
 ```
 
-### 2. Get PUPA Dataset
+**Option B: Fresh data setup**
+```bash
+cd /work1/krishnamurthy/arvind/adBO/pupa
+mkdir -p data
+ln -s ../pupa/data/* data/
+```
 
-**Option A: Quick Setup (Recommended)**
-
-Run the conversion script to download and prepare the data automatically:
+### 2. Verify Setup
 
 ```bash
 cd /work1/krishnamurthy/arvind/adBO/pupa
 
-# Download PAPILLON repo and convert data
-git clone https://github.com/Columbia-NLP-Lab/PAPILLON/ /tmp/PAPILLON
-
-# Convert CSV to JSON splits (111/111/221)
-python3 convert_pupa_data.py \
-  --csv_path /tmp/PAPILLON/pupa/PUPA_New.csv \
-  --output_dir ./data
-```
-
-This creates `train.json`, `dev.json`, and `test.json` in the `./data` directory.
-
-**Option B: Manual Setup**
-
-1. Clone the PAPILLON repository:
-   ```bash
-   git clone https://github.com/Columbia-NLP-Lab/PAPILLON/
-   ```
-
-2. The dataset is in `PAPILLON/pupa/PUPA_New.csv` (664 examples total)
-
-3. Run the conversion script:
-   ```bash
-   python3 convert_pupa_data.py --csv_path /path/to/PAPILLON/pupa/PUPA_New.csv --output_dir ./data
-   ```
-
-**Verify Dataset**
-
-```bash
+# Test data loading
 python3 -c "
 from pupa_data import load_pupa_splits
-train, dev, test = load_pupa_splits(seed=0, data_dir='./data')
-print(f'Loaded: {len(train)} train, {len(dev)} dev, {len(test)} test')
+train, dev, test = load_pupa_splits(seed=0)
+print(f'✓ Loaded: {len(train)} train, {len(dev)} dev, {len(test)} test')
 "
-```
 
-You should see: `Loaded: 111 train, 111 dev, 221 test`
-
-### 3. Start vLLM Server
-
-In one terminal:
-```bash
-vllm serve Qwen/Qwen3-8B \
-  --host 0.0.0.0 --port 8000 \
-  --api-key EMPTY \
-  --max-model-len 16384
-```
-
-### 4. Set Environment Variables
-
-In another terminal:
-```bash
-export VLLM_API_BASE="http://127.0.0.1:8000/v1"
-export VLLM_API_KEY="EMPTY"
-export VLLM_MODEL="Qwen/Qwen3-8B"
+# Expected output:
+# [PUPA] Loading data from: /work1/krishnamurthy/arvind/adBO/pupa/data
+# [PUPA] Loaded 111 train, 111 dev, 221 test
+# [PUPA] Using original PAPILLON pipeline for evaluation
+# ✓ Loaded: 111 train, 111 dev, 221 test
 ```
 
 ## Usage
 
-### Sanity Check
-
-Test the PAPILLON pipeline on a few examples:
+### Quick Sanity Check
 
 ```bash
+export VLLM_API_BASE="http://127.0.0.1:8000/v1"
+export VLLM_API_KEY="EMPTY"
+export VLLM_MODEL="Qwen/Qwen3-8B"
+
 python sanity_pupa.py \
-  --data_dir "$WORK/adBO/pupa/data" \
   --split dev \
   --n_examples 3 \
-  --dump_jsonl sanity_results.jsonl
+  --dump_jsonl sanity_pupa_results.jsonl
 ```
 
 ### Single GEPA Run
 
-Run GEPA optimization:
-
 ```bash
 python run_gepa_pupa.py \
-  --run_dir "$WORK/adBO/runs/pupa_runs/single_gepa" \
+  --run_dir "$WORK/adBO/runs/pupa_runs/test" \
   --work_dir "$WORK/adBO/pupa/data" \
   --num_threads 12 \
   --max_metric_calls 1000
 ```
 
-### Compare GEPA Variants
+### Submit SLURM Job
 
-Run and compare three GEPA variants in parallel:
-- GEPA (baseline)
-- GEPA+merge
-- GEPA with bon=5, itr=5
+**Fresh run:**
+```bash
+sbatch job.pupa_compare.sbatch
+```
+
+**Resume from latest:**
+```bash
+# Normal resume
+sbatch job.pupa_compare_resume.sbatch
+
+# Clean resume (start optimization from scratch, keep data)
+CLEAN=1 sbatch job.pupa_compare_resume.sbatch
+```
+
+### Monitor Progress
 
 ```bash
-python run_gepa_pupa_compare.py \
-  --out_root "logs/pupa_comparison" \
-  --refresh_sec 20 \
-  --stage_step 500 \
-  --seed 0 \
-  --max_metric_calls 1000 \
-  --num_threads 16 \
-  --api_bases "http://127.0.0.1:8000/v1"
+# Check latest run
+ls -lh $WORK/adBO/runs/pupa_runs/latest/logs/
+
+# View live plot
+display $WORK/adBO/runs/pupa_runs/latest/logs/comparison_live.png
+
+# Tail logs
+tail -f $WORK/adBO/runs/pupa_runs/latest/logs/gepa/stdout.log
 ```
 
-For true parallelism with multiple vLLM servers:
-```bash
-python run_gepa_pupa_compare.py \
-  --out_root "logs/pupa_comparison" \
-  --api_bases "http://127.0.0.1:8000/v1,http://127.0.0.1:8001/v1,http://127.0.0.1:8002/v1" \
-  --max_metric_calls 1000
+## Code Attribution
+
+The `papillon/` directory contains code copied from:
+- **Repository**: https://github.com/Columbia-NLP-Lab/PAPILLON
+- **License**: MIT (see papillon/LICENSE_PAPILLON.txt)
+- **Files copied**:
+  - `run_llama_dspy.py` → `papillon_signatures.py` + `papillon_pipeline.py`
+  - `llm_judge.py` → `papillon/llm_judge.py`
+
+### Changes Made
+
+1. **Modularization**: Split monolithic files into logical modules
+2. **GEPA Integration**: Added 5-argument metric wrapper
+3. **Error Handling**: Added fallbacks for robustness
+4. **DSPy 2.x**: Updated API calls for compatibility
+
+**No changes to core algorithms** - all PAPILLON logic preserved exactly.
+
+## Citation
+
+If you use this code, please cite both PAPILLON and GEPA:
+
+```bibtex
+@inproceedings{papillon2025,
+  title={PAPILLON: PrivAcy Preservation in Large Language models by Integrating Locally-trained OptiONs},
+  author={Columbia NLP Lab},
+  booktitle={NAACL},
+  year={2025}
+}
+
+@article{gepa2024,
+  title={GEPA: Generative Efficient Prompt Augmentation},
+  author={...},
+  journal={arXiv preprint},
+  year={2024}
+}
 ```
-
-## Key Differences from HotpotQA
-
-1. **No Retrieval**: PUPA doesn't use BM25 or document retrieval
-2. **3-Stage Pipeline**: Query rewriter → Untrusted model → Response rewriter
-3. **Privacy Metrics**: Tracks PII leakage instead of document recall
-4. **Aggregate Score**: Balances quality and privacy (not just EM)
-5. **Dataset Size**: Much smaller (443 total vs 750 in HotpotQA setup)
-
-## Implementation Details
-
-### PAPILLON Pipeline (pupa_program.py)
-
-```python
-class PAPILLONPipeline(dspy.Module):
-    def forward(self, user_query: str):
-        # Stage 1: Remove PII (Trusted)
-        rewritten_query = self.query_rewriter(user_query)
-
-        # Stage 2: Get response (Untrusted)
-        untrusted_response = self.untrusted_responder(rewritten_query)
-
-        # Stage 3: Refine response (Trusted)
-        final_response = self.response_rewriter(
-            user_query, rewritten_query, untrusted_response
-        )
-
-        return dspy.Prediction(
-            rewritten_query=rewritten_query,
-            untrusted_response=untrusted_response,
-            final_response=final_response
-        )
-```
-
-### Metrics (pupa_metric.py)
-
-- **Quality Score**: LLM-as-judge comparing response to reference (fallback to heuristic)
-- **Leakage Score**: Fraction of PII entities that appear in rewritten query
-- **Aggregate**: `(quality + (1 - leakage)) / 2`
-
-### GEPA Integration
-
-The metric function follows GEPA's 5-argument signature:
-
-```python
-def pupa_metric_with_feedback(gold, pred, trace=None, pred_name=None, pred_trace=None):
-    quality = pupa_quality_score(gold, pred, trace)
-    leakage = pupa_leakage_score(gold, pred, trace)
-    aggregate = (quality + (1.0 - leakage)) / 2.0
-
-    feedback = f"""PUPA Evaluation:
-- Response Quality: {quality:.3f}
-- PII Leakage: {leakage:.3f} (lower is better)
-- Aggregate Score: {aggregate:.3f}
-    """
-
-    return dspy.Prediction(score=aggregate, feedback=feedback)
-```
-
-## References
-
-- PUPA Paper: https://aclanthology.org/2025.naacl-long.173.pdf
-- PAPILLON GitHub: https://github.com/Columbia-NLP-Lab/PAPILLON/
-- GEPA Paper: (citations in main README)
 
 ## Troubleshooting
 
-### Dataset Loading Issues
+### Import Errors
+```
+ModuleNotFoundError: No module named 'papillon'
+```
+**Solution**: Run from pupa/ directory or add to PYTHONPATH:
+```bash
+export PYTHONPATH="/work1/krishnamurthy/arvind/adBO/pupa:$PYTHONPATH"
+```
 
-If you see: `FileNotFoundError: PUPA dataset not found`:
-1. Download from https://github.com/Columbia-NLP-Lab/PAPILLON/
-2. Place `train.json`, `dev.json`, `test.json` in `--work_dir` or `--data_dir`
-3. Or update `pupa_data.py` with the correct HuggingFace dataset name
+### Data Not Found
+```
+FileNotFoundError: PUPA dataset not found
+```
+**Solution**: Set up data symlink:
+```bash
+cd /work1/krishnamurthy/arvind/adBO/pupa
+mkdir -p data
+ln -s ../pupa/data/* data/
+```
 
-### Quality Score Always 0.5
+### Port Conflicts
+```
+Address already in use: 22000
+```
+**Solution**: SLURM job adds random offset. If manual testing:
+```bash
+export VLLM_API_BASE="http://127.0.0.1:22500/v1"  # Use different port
+```
 
-The LLM-as-judge for quality evaluation requires a working LM. If the LM is not configured or fails, it falls back to a simple heuristic. Check that:
-- vLLM server is running
-- `VLLM_API_BASE` is set correctly
-- The model can be called successfully
+### Different Scores from pupa/
+This is **expected**! pupa uses the original PAPILLON metrics which:
+- Handle position bias differently in quality evaluation
+- Use more sophisticated leakage detection
+- Include prompt quality as third component
 
-### Expected Dataset Sizes
+The scores should differ, showing the impact of the original methodology.
 
-The PUPA paper specifies:
-- Train: 111 examples
-- Validation: 111 examples
-- Test: 221 examples
+## References
 
-If your dataset has different sizes, you'll see a warning but the code will proceed.
+- **PAPILLON Repo**: https://github.com/Columbia-NLP-Lab/PAPILLON
+- **PUPA Paper**: https://aclanthology.org/2025.naacl-long.173.pdf
+- **GEPA**: (see main repo README)

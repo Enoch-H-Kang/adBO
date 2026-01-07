@@ -28,10 +28,15 @@ import argparse
 import csv
 import json
 import os
+import sys
 from pathlib import Path
 
 import dspy
 from dspy.evaluate import Evaluate
+
+# Add parent directory to path to import vllm_utils
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from vllm_utils import configure_vllm_with_health_check
 
 from hover_data import load_hover_splits
 from hover_metric import (
@@ -45,32 +50,21 @@ from wiki_retriever import build_or_load_bm25, make_search_fn
 
 def configure_dspy_lm_from_vllm():
     """
-    Matches the GEPA paper's Qwen3-8B decoding settings:
-    temperature=0.6, top_p=0.95, top_k=20; context up to 16384. :contentReference[oaicite:15]{index=15}
+    Qwen3-8B via vLLM OpenAI-compatible endpoint with health checking.
+    Paper-like decoding: temperature=0.6, top_p=0.95, ctx up to 16384 (server-side).
 
-    NOTE: top_k is not part of the official OpenAI schema; if your stack rejects it,
-    set top_k at the vLLM server-side generation config instead.
+    This will wait for the vLLM server to be available on startup and
+    includes retry logic for connection stability.
     """
-    api_base = os.environ.get("VLLM_API_BASE", "http://127.0.0.1:8000/v1")
-    api_key = os.environ.get("VLLM_API_KEY", "EMPTY")
-    model = os.environ.get("VLLM_MODEL", "Qwen/Qwen3-8B")
-
-    lm_kwargs = dict(
-        api_base=api_base,
-        api_key=api_key,
-        model_type="chat",
+    return configure_vllm_with_health_check(
         temperature=0.6,
         top_p=0.95,
-        # top_k=20,   # uncomment only if your client/server accepts it
-        # No max_tokens limit - let vLLM dynamically allocate based on available context window
-        cache=False,
-        num_retries=10,  # Increased retries for connection stability
-        timeout=300,  # 5 minute timeout for long generations
+        max_tokens=None,  # Let vLLM dynamically allocate
+        num_retries=10,
+        timeout=300,
+        wait_on_startup=True,
+        startup_wait_time=300,  # Wait up to 5 minutes for server on startup
     )
-
-    lm = dspy.LM(f"openai/{model}", **lm_kwargs)
-    dspy.configure(lm=lm)
-    return lm
 
 
 def write_curve_csv(curve, path: Path):
@@ -94,6 +88,9 @@ def main():
     # Parallelism
     ap.add_argument("--num_threads", type=int, default=32)
     ap.add_argument("--retriever_threads", type=int, default=4)
+
+    # Variant knobs
+    ap.add_argument("--use_merge", type=int, default=0, choices=[0, 1])
 
     # Data paths
     ap.add_argument("--work_dir", type=str, default=os.environ.get("WORK", "/tmp/hover_workdir"))
@@ -123,7 +120,7 @@ def main():
     baseline_dev = evaluator_dev(student).score
     print(f"[BASELINE] dev score: {baseline_dev:.2f}")
 
-    # 6) GEPA (GEPA only => use_merge=False)
+    # 6) GEPA
     # - metric must accept 5 args. :contentReference[oaicite:17]{index=17}
     # - log_dir enables resume. :contentReference[oaicite:18]{index=18}
     # - track_stats provides detailed_results for learning curve extraction. :contentReference[oaicite:19]{index=19}
@@ -133,7 +130,7 @@ def main():
         max_metric_calls=args.max_metric_calls,
         reflection_minibatch_size=3,
         candidate_selection_strategy="pareto",
-        use_merge=False,  # GEPA-only
+        use_merge=bool(args.use_merge),
         num_threads=args.num_threads,
         log_dir=args.log_dir,
         track_stats=True,

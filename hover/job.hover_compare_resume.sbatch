@@ -71,20 +71,21 @@ echo "$API0,$API1,$API2" > "$OUT_ROOT/api_bases.txt"
 
 # ----------------------------
 # Start 3 vLLM servers on 3 GPUs using srun
+# NOTE: Use inline env var (HIP_VISIBLE_DEVICES=X srun ...) to avoid race condition
+# with backgrounded commands. Using "export" before "&" causes all processes to
+# potentially see the same (last) value since exports happen before sruns start.
 # ----------------------------
-export HIP_VISIBLE_DEVICES=0
-srun -n 1 --exact \
-  bash -lc "vllm serve \"$VLLM_MODEL\" --host 127.0.0.1 --port ${PORT0} --api-key \"$VLLM_API_KEY\" --max-model-len 16384 -O 0" \
+# NOTE: Using GPUs 0, 2, 3 (skipping GPU 1 which is unreliable)
+HIP_VISIBLE_DEVICES=0 srun -n 1 --exact \
+  $WORK/venv/hotpotqa2/bin/vllm serve "$VLLM_MODEL" --host 127.0.0.1 --port ${PORT0} --api-key "$VLLM_API_KEY" --max-model-len 16384 -O 0 \
   >> "$OUT_ROOT/vllm_${PORT0}.log" 2>&1 &
 
-export HIP_VISIBLE_DEVICES=1
-srun -n 1 --exact \
-  bash -lc "vllm serve \"$VLLM_MODEL\" --host 127.0.0.1 --port ${PORT1} --api-key \"$VLLM_API_KEY\" --max-model-len 16384 -O 0" \
+HIP_VISIBLE_DEVICES=2 srun -n 1 --exact \
+  $WORK/venv/hotpotqa2/bin/vllm serve "$VLLM_MODEL" --host 127.0.0.1 --port ${PORT1} --api-key "$VLLM_API_KEY" --max-model-len 16384 -O 0 \
   >> "$OUT_ROOT/vllm_${PORT1}.log" 2>&1 &
 
-export HIP_VISIBLE_DEVICES=2
-srun -n 1 --exact \
-  bash -lc "vllm serve \"$VLLM_MODEL\" --host 127.0.0.1 --port ${PORT2} --api-key \"$VLLM_API_KEY\" --max-model-len 16384 -O 0" \
+HIP_VISIBLE_DEVICES=3 srun -n 1 --exact \
+  $WORK/venv/hotpotqa2/bin/vllm serve "$VLLM_MODEL" --host 127.0.0.1 --port ${PORT2} --api-key "$VLLM_API_KEY" --max-model-len 16384 -O 0 \
   >> "$OUT_ROOT/vllm_${PORT2}.log" 2>&1 &
 
 # ----------------------------

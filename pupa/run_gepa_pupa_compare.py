@@ -15,7 +15,7 @@ python run_gepa_pupa_compare.py \
 
 '''
 
-# run_gepa_pupa_compare.py
+# run_gepa_pupa_compare.py - PUPA benchmark using original PAPILLON
 from __future__ import annotations
 
 import argparse
@@ -147,6 +147,25 @@ def main():
             "  --api_bases http://127.0.0.1:18960/v1,http://127.0.0.1:18961/v1,http://127.0.0.1:18962/v1"
         )
 
+    # Check which vLLM servers are actually available
+    if len(api_bases) == 3:
+        print("[Compare] Checking vLLM server availability...")
+        import sys
+        sys.path.insert(0, str(Path(__file__).parent.parent))
+        from vllm_utils import check_vllm_health
+
+        available_servers = []
+        for idx, api_base in enumerate(api_bases):
+            if check_vllm_health(api_base, api_key="EMPTY", timeout=5):
+                available_servers.append(idx)
+                print(f"  ✓ Server {idx} ({api_base}) is available")
+            else:
+                print(f"  ✗ Server {idx} ({api_base}) is NOT available")
+
+        if len(available_servers) < len(variants):
+            print(f"\n[Compare] WARNING: Only {len(available_servers)}/{len(variants)} vLLM servers available")
+            print(f"[Compare] Available servers: {available_servers}")
+            print(f"[Compare] Will use fallback assignment for unavailable servers\n")
 
     procs = []
     for i, v in enumerate(variants):
@@ -165,7 +184,13 @@ def main():
 
         env_overrides = {}
         if api_bases:
-            env_overrides["VLLM_API_BASE"] = api_bases[i] if len(api_bases) == 3 else api_bases[0]
+            # Use assigned server if available, otherwise use first available server as fallback
+            if len(api_bases) == 3 and i not in available_servers and len(available_servers) > 0:
+                fallback_idx = available_servers[0]
+                env_overrides["VLLM_API_BASE"] = api_bases[fallback_idx]
+                print(f"[Compare] Variant '{v['name']}': Using fallback server {fallback_idx} ({api_bases[fallback_idx]})")
+            else:
+                env_overrides["VLLM_API_BASE"] = api_bases[i] if len(api_bases) == 3 else api_bases[0]
 
         log_file = run_dir / "stdout.log"
         p = spawn_run(worker_py, run_dir, var_args, env_overrides, log_file)
@@ -189,7 +214,7 @@ def main():
             plot_curves_png(
                 live_png,
                 curves,
-                title="PUPA: GEPA variant comparison (live)"
+                title="PUPA (Original PAPILLON): GEPA variant comparison (live)"
             )
             # also write merged csv (best-effort while running)
             _, rows = merge_step_curves(curves)
@@ -207,7 +232,7 @@ def main():
             curves[name] = c
 
     if curves:
-        plot_curves_png(final_png, curves, title="PUPA: GEPA variant comparison (final)")
+        plot_curves_png(final_png, curves, title="PUPA (Original PAPILLON): GEPA variant comparison (final)")
         _, rows = merge_step_curves(curves)
         write_merged_csv(merged_csv, list(curves.keys()), rows)
 

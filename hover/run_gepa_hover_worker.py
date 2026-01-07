@@ -28,10 +28,15 @@ import argparse
 import csv
 import json
 import os
+import sys
 from pathlib import Path
 
 import dspy
 from dspy.evaluate import Evaluate
+
+# Add parent directory to path to import vllm_utils
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from vllm_utils import configure_vllm_with_health_check
 
 from hover_data import load_hover_splits
 from hover_metric import (
@@ -45,38 +50,21 @@ from wiki_retriever import build_or_load_bm25, make_search_fn
 
 def configure_dspy_lm_from_vllm():
     """
-    Qwen3-8B via a vLLM OpenAI-compatible endpoint.
+    Qwen3-8B via vLLM OpenAI-compatible endpoint with health checking.
+    Paper-like decoding: temperature=0.6, top_p=0.95, ctx up to 16384 (server-side).
 
-    You asked not to "cap tokens"—we still need some max_tokens value so the OpenAI-style
-    request is valid and doesn't exceed the remaining context budget. Keep it generous.
-
-    IMPORTANT:
-    - top_k is not in the official OpenAI schema; set it server-side if needed.
+    This will wait for the vLLM server to be available on startup and
+    includes retry logic for connection stability.
     """
-    api_base = os.environ.get("VLLM_API_BASE")
-    if not api_base:
-        raise RuntimeError(
-            "VLLM_API_BASE is not set. Either export it, or pass --api_bases via the compare driver."
-        )
-
-    api_key = os.environ.get("VLLM_API_KEY", "EMPTY")
-    model = os.environ.get("VLLM_MODEL", "Qwen/Qwen3-8B")
-
-    lm = dspy.LM(
-        f"openai/{model}",
-        api_base=api_base,
-        api_key=api_key,
-        model_type="chat",
+    return configure_vllm_with_health_check(
         temperature=0.6,
         top_p=0.95,
-        # top_k=20,  # enable only if your client supports it; otherwise set server-side in vLLM
-        # No max_tokens limit - let vLLM dynamically allocate based on available context window
-        cache=False,
-        num_retries=10,  # Increased retries for connection stability
-        timeout=300,  # 5 minute timeout for long generations
+        max_tokens=None,  # Let vLLM dynamically allocate
+        num_retries=10,
+        timeout=300,
+        wait_on_startup=True,
+        startup_wait_time=300,  # Wait up to 5 minutes for server on startup
     )
-    dspy.configure(lm=lm)
-    return lm
 
 
 def write_curve_csv(curve, path: Path):
@@ -104,7 +92,7 @@ def main():
     ap = argparse.ArgumentParser()
 
     ap.add_argument("--seed", type=int, default=0)
-    ap.add_argument("--k_per_hop", type=int, default=5)
+    ap.add_argument("--k_per_hop", type=int, default=7)
 
     # Required by compare driver
     ap.add_argument(
@@ -150,14 +138,13 @@ def main():
         help="GEPA checkpoint/log directory. If unset, uses <run_dir>/gepa_logs for resume.",
     )
 
-    # IMPORTANT: your current loader defaults to require_num_hops=3.
-    # The GEPA paper says "up to 3-hop retrieval", so defaulting to *no exact hop filter*
-    # is usually closer. We surface it as a flag so you can match whichever you intend.
+    # LangProbe filters by unique gold document count, NOT num_hops metadata.
+    # Default=3 means exactly 3 unique supporting documents (matching LangProbe).
     ap.add_argument(
-        "--require_num_hops",
+        "--require_unique_docs",
         type=int,
-        default=-1,
-        help="If set >=0, filter examples to exactly this num_hops. Default -1 disables exact filtering.",
+        default=3,
+        help="Filter examples to exactly this many unique gold docs. Default 3 matches LangProbe. Use -1 to disable.",
     )
 
     args = ap.parse_args()
@@ -186,7 +173,7 @@ def main():
                 retriever_threads=args.retriever_threads,
                 work_dir=str(args.work_dir),
                 gepa_log_dir=str(gepa_log_dir),
-                require_num_hops=(None if args.require_num_hops < 0 else args.require_num_hops),
+                require_unique_docs=(None if args.require_unique_docs < 0 else args.require_unique_docs),
                 vllm_api_base=os.environ.get("VLLM_API_BASE", None),
                 vllm_model=os.environ.get("VLLM_MODEL", None),
             ),
@@ -213,9 +200,9 @@ def main():
     # -----------------------
     # Data (150/300/300)
     # -----------------------
-    req = None if args.require_num_hops < 0 else int(args.require_num_hops)
+    req = None if args.require_unique_docs < 0 else int(args.require_unique_docs)
     train, dev, test = load_hover_splits(
-        seed=args.seed, n_train=150, n_dev=300, n_test=300, require_num_hops=req
+        seed=args.seed, n_train=150, n_dev=300, n_test=300, require_unique_docs=req
     )
 
     # -----------------------
@@ -224,11 +211,22 @@ def main():
     student = HoverMultiHop(search_fn=search_fn, k_per_hop=args.k_per_hop)
 
     # -----------------------
-    # Baseline dev
+    # Baseline dev (skip if resuming with cached value)
     # -----------------------
-    evaluator_dev = Evaluate(devset=dev, metric=hover_recall_score, num_threads=args.num_threads, display_progress=True)
-    baseline_dev = evaluator_dev(student).score
-    print(f"[BASELINE] dev recall: {baseline_dev * 100:.2f}")
+    baseline_cache = run_dir / "baseline.json"
+    checkpoint_exists = (gepa_log_dir / "gepa_state.bin").exists()
+
+    if checkpoint_exists and baseline_cache.exists():
+        # Resume: load cached baseline
+        cached = json.loads(baseline_cache.read_text(encoding="utf-8"))
+        baseline_dev = cached["baseline_dev"]
+        print(f"[BASELINE] (cached) dev recall: {baseline_dev * 100:.2f}")
+    else:
+        # Fresh run: compute baseline and cache it
+        evaluator_dev = Evaluate(devset=dev, metric=hover_recall_score, num_threads=args.num_threads, display_progress=True)
+        baseline_dev = evaluator_dev(student).score
+        baseline_cache.write_text(json.dumps({"baseline_dev": baseline_dev}), encoding="utf-8")
+        print(f"[BASELINE] dev recall: {baseline_dev * 100:.2f}")
 
     # -----------------------
     # GEPA factory
@@ -251,6 +249,9 @@ def main():
             seed=args.seed,
             **extra_gepa,
         )
+
+    # Create evaluator for use in evaluate_and_write
+    evaluator_dev = Evaluate(devset=dev, metric=hover_recall_score, num_threads=args.num_threads, display_progress=True)
 
     def evaluate_and_write(optimized):
         opt_dev = evaluator_dev(optimized).score

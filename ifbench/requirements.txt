@@ -1,4 +1,0 @@
-dspy-ai
-datasets
-matplotlib
-pandas

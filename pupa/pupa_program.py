@@ -1,146 +1,60 @@
-# pupa_program.py
 """
-PAPILLON: Privacy-preserving LLM delegation system for PUPA task.
+Program factory for PUPA benchmark using original PAPILLON.
 
-Architecture (3-stage pipeline):
-1. Query Rewriter (Trusted Model): Rewrite user query to remove PII
-2. Untrusted Model Call: Get response from powerful cloud LLM using rewritten query
-3. Response Rewriter (Trusted Model): Refine response using original context
-
-From PUPA paper:
-"PAPILLON, a compound AI system consisting of 2 modules, a user query rewriter
-and a response rewriter, run over the trusted model, along with an intermediate
-call to the untrusted model with the rewritten query."
+Creates instances of the original PAPILLON pipeline from the
+papillon/ module.
 """
-from __future__ import annotations
-from typing import Optional
 
 import dspy
+from papillon.papillon_pipeline import PAPILLON
 
 
-class QueryRewriterSig(dspy.Signature):
+def _create_untrusted_model_wrapper():
     """
-    Rewrite user query to remove personally identifiable information (PII).
+    Create a wrapper for the untrusted model that matches PAPILLON's interface.
 
-    The rewritten query should preserve the intent and key information needed
-    for answering, while removing names, addresses, phone numbers, emails,
-    and other sensitive personal data.
+    The original PAPILLON expects untrusted_model to be a callable that:
+    - Takes a prompt string
+    - Returns a list with at least one response
+
+    We wrap DSPy's language model to match this interface.
     """
-    user_query: str = dspy.InputField(
-        desc="Original user query that may contain PII"
-    )
-    rewritten_query: str = dspy.OutputField(
-        desc="Privacy-preserving version of the query with PII removed/anonymized"
-    )
-
-
-class UntrustedResponseSig(dspy.Signature):
-    """
-    Generate response using untrusted but powerful model.
-
-    This simulates calling a cloud API (e.g., GPT-4) with the rewritten query.
-    """
-    rewritten_query: str = dspy.InputField(
-        desc="Privacy-preserving query without PII"
-    )
-    untrusted_response: str = dspy.OutputField(
-        desc="Response from untrusted model based on rewritten query"
-    )
-
-
-class ResponseRewriterSig(dspy.Signature):
-    """
-    Refine the untrusted model's response using original context.
-
-    The trusted model adds back necessary personalization and ensures
-    the response properly addresses the user's original query.
-    """
-    user_query: str = dspy.InputField(
-        desc="Original user query (with PII, known only to trusted model)"
-    )
-    rewritten_query: str = dspy.InputField(
-        desc="Privacy-preserving query that was sent to untrusted model"
-    )
-    untrusted_response: str = dspy.InputField(
-        desc="Response received from untrusted model"
-    )
-    final_response: str = dspy.OutputField(
-        desc="Refined response that properly addresses the user's original query"
-    )
-
-
-class PAPILLONPipeline(dspy.Module):
-    """
-    PAPILLON: 3-stage privacy-preserving delegation pipeline.
-
-    Stage 1: Trusted model rewrites query to remove PII
-    Stage 2: Untrusted model generates response from rewritten query
-    Stage 3: Trusted model refines response using original context
-    """
-
-    def __init__(self, use_chain_of_thought: bool = True):
-        super().__init__()
-
-        if use_chain_of_thought:
-            self.query_rewriter = dspy.ChainOfThought(QueryRewriterSig)
-            self.untrusted_responder = dspy.ChainOfThought(UntrustedResponseSig)
-            self.response_rewriter = dspy.ChainOfThought(ResponseRewriterSig)
-        else:
-            self.query_rewriter = dspy.Predict(QueryRewriterSig)
-            self.untrusted_responder = dspy.Predict(UntrustedResponseSig)
-            self.response_rewriter = dspy.Predict(ResponseRewriterSig)
-
-    def forward(self, user_query: str):
+    def untrusted_model(prompt: str):
         """
-        Execute PAPILLON pipeline.
+        Simulate calling an untrusted powerful model.
+
+        In the original PAPILLON, this would call GPT-4 or another API model.
+        For GEPA optimization, we use the same DSPy LM that's being optimized.
 
         Args:
-            user_query: Original user query (may contain PII)
+            prompt: The privacy-preserving prompt
 
         Returns:
-            dspy.Prediction with:
-            - rewritten_query: Privacy-preserving query
-            - untrusted_response: Response from untrusted model
-            - final_response: Refined final response
-            - response: Alias for final_response (for metric compatibility)
+            List containing the model's response as first element
         """
-        # Stage 1: Rewrite query to remove PII (Trusted)
-        stage1 = self.query_rewriter(user_query=user_query)
-        rewritten_query = stage1.rewritten_query
+        try:
+            # Use DSPy's current language model to generate response
+            response = dspy.Predict("question -> answer")(question=prompt).answer
+            return [response]
+        except Exception as e:
+            # Fallback on error
+            return [""]
 
-        # Stage 2: Get response from untrusted model
-        stage2 = self.untrusted_responder(rewritten_query=rewritten_query)
-        untrusted_response = stage2.untrusted_response
-
-        # Stage 3: Refine response using original context (Trusted)
-        stage3 = self.response_rewriter(
-            user_query=user_query,
-            rewritten_query=rewritten_query,
-            untrusted_response=untrusted_response,
-        )
-        final_response = stage3.final_response
-
-        return dspy.Prediction(
-            rewritten_query=rewritten_query,
-            untrusted_response=untrusted_response,
-            final_response=final_response,
-            response=final_response,  # Alias for metric compatibility
-            stage1_reasoning=getattr(stage1, "reasoning", ""),
-            stage2_reasoning=getattr(stage2, "reasoning", ""),
-            stage3_reasoning=getattr(stage3, "reasoning", ""),
-        )
+    return untrusted_model
 
 
-def create_pupa_program(
-    use_chain_of_thought: bool = True
-) -> dspy.Module:
+def create_pupa_program() -> dspy.Module:
     """
-    Factory function to create PAPILLON pipeline for PUPA task.
+    Factory function to create original PAPILLON pipeline.
 
-    Args:
-        use_chain_of_thought: Whether to use CoT reasoning (default: True)
+    This uses the actual PAPILLON implementation from:
+    https://github.com/Columbia-NLP-Lab/PAPILLON
 
     Returns:
-        Configured PAPILLON pipeline
+        PAPILLON pipeline module with 3-stage architecture:
+        1. CreateOnePrompt: Removes PII from user query (trusted)
+        2. Untrusted Model: Generates response to privacy-preserving prompt
+        3. InfoAggregator: Synthesizes final response (trusted)
     """
-    return PAPILLONPipeline(use_chain_of_thought=use_chain_of_thought)
+    untrusted_model = _create_untrusted_model_wrapper()
+    return PAPILLON(untrusted_model=untrusted_model)

@@ -1,6 +1,6 @@
 # sanity_pupa.py
 """
-Sanity check script for PUPA PAPILLON pipeline.
+Sanity check script for PUPA benchmark using original PAPILLON pipeline.
 
 Tests the privacy-preserving delegation system on a few examples
 to verify the implementation is working correctly.
@@ -16,10 +16,11 @@ from pathlib import Path
 import dspy
 
 from pupa_data import load_pupa_splits
-from pupa_metric import (
-    pupa_quality_score,
-    pupa_leakage_score,
-    pupa_aggregate_score,
+from papillon.llm_judge import (
+    papillon_quality_score,
+    papillon_leakage_count,
+    papillon_prompt_quality,
+    papillon_aggregate_score,
 )
 from pupa_program import create_pupa_program
 
@@ -71,10 +72,7 @@ def main():
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--split", type=str, default="dev", choices=["train", "dev", "test"])
     ap.add_argument("--n_examples", type=int, default=3)
-    ap.add_argument("--data_dir", type=str, default=None, help="Directory containing PUPA dataset files")
-
-    # Program
-    ap.add_argument("--use_cot", type=int, default=1, choices=[0, 1], help="Use chain-of-thought (1) or direct predict (0)")
+    ap.add_argument("--data_dir", type=str, default=None, help="Directory containing PUPA dataset files (defaults to ./data)")
 
     ap.add_argument("--dump_jsonl", type=str, default=None, help="Optional path to write per-example results.jsonl")
 
@@ -108,8 +106,8 @@ def main():
         print(f"[ERROR] No examples found in {args.split} split!")
         return 1
 
-    # Create program
-    prog = create_pupa_program(use_chain_of_thought=bool(args.use_cot))
+    # Create program (Original PAPILLON)
+    prog = create_pupa_program()
 
     dump_path = Path(args.dump_jsonl) if args.dump_jsonl else None
     if dump_path:
@@ -124,40 +122,54 @@ def main():
             pred = prog(user_query=ex.user_query)
             dt = time.time() - t0
 
-            # Compute metrics
-            quality = pupa_quality_score(ex, pred)
-            leakage = pupa_leakage_score(ex, pred)
-            aggregate = pupa_aggregate_score(ex, pred)
+            # Compute metrics using original PAPILLON methodology
+            quality = papillon_quality_score(ex, pred)  # Binary: 0 or 1
+            leakage_count = papillon_leakage_count(ex, pred)  # Count of leaked PII
+            prompt_qual = papillon_prompt_quality(ex, pred)  # Binary: 0 or 1
+            aggregate = papillon_aggregate_score(ex, pred)
 
-            print(f"\n=== EXAMPLE {i}/{len(examples)} ===")
+            # Get PII count for display
+            private_info = ex.private_info if hasattr(ex, 'private_info') else []
+            num_pii = len(private_info) if private_info else 1
+
+            print(f"\n=== EXAMPLE {i}/{len(examples)} (Original PAPILLON) ===")
             print("USER QUERY:", ex.user_query)
             if hasattr(ex, 'private_info') and ex.private_info:
                 print("PII ENTITIES:", ex.private_info)
 
-            print("\n--- STAGE 1: Query Rewriting (Trusted) ---")
-            print("REWRITTEN QUERY:", pred.rewritten_query)
+            print("\n--- STAGE 1: CreateOnePrompt (Trusted) ---")
+            # Original PAPILLON returns 'prompt' field (the privacy-preserving prompt)
+            rewritten_query = getattr(pred, 'prompt', getattr(pred, 'rewritten_query', ''))
+            print("REWRITTEN QUERY:", rewritten_query)
 
             print("\n--- STAGE 2: Untrusted Model Response ---")
-            print("RESPONSE:", pred.untrusted_response[:200], "..." if len(pred.untrusted_response) > 200 else "")
+            # Original PAPILLON returns 'gptResponse' field
+            model_response = getattr(pred, 'gptResponse', getattr(pred, 'model_response', ''))
+            print("RESPONSE:", model_response[:200], "..." if len(model_response) > 200 else "")
 
-            print("\n--- STAGE 3: Response Refinement (Trusted) ---")
-            print("FINAL RESPONSE:", pred.final_response[:200], "..." if len(pred.final_response) > 200 else "")
+            print("\n--- STAGE 3: InfoAggregator (Trusted) ---")
+            # Original PAPILLON returns 'output' field
+            final_response = getattr(pred, 'output', getattr(pred, 'final_response', getattr(pred, 'response', '')))
+            print("FINAL RESPONSE:", final_response[:200], "..." if len(final_response) > 200 else "")
 
             if hasattr(ex, 'reference_response') and ex.reference_response:
                 print("\n--- REFERENCE ---")
                 print("REFERENCE RESPONSE:", ex.reference_response[:200], "..." if len(ex.reference_response) > 200 else "")
 
-            print("\n--- METRICS ---")
-            print(f"Quality Score:  {quality:.3f} (higher is better)")
-            print(f"Leakage Score:  {leakage:.3f} (lower is better)")
-            print(f"Aggregate Score: {aggregate:.3f}")
+            print("\n--- METRICS (Original PAPILLON from GitHub) ---")
+            print(f"Quality Score:      {quality} (binary: 0=poor, 1=good)")
+            print(f"PII Leakage:        {leakage_count}/{num_pii} pieces leaked")
+            print(f"Prompt Quality:     {prompt_qual} (binary: 0=invalid, 1=valid)")
+            print(f"Aggregate Score:    {aggregate:.3f}")
+            print(f"Formula: (quality - leakage/num_pii + prompt_qual) / 2")
             print(f"Latency: {dt:.2f}s")
 
             # Check if PII leaked
             if hasattr(ex, 'private_info') and ex.private_info:
                 leaked_entities = []
                 for pii in ex.private_info:
-                    if isinstance(pii, str) and pii.lower() in pred.rewritten_query.lower():
+                    # Use the rewritten_query variable we extracted above
+                    if isinstance(pii, str) and pii.lower() in rewritten_query.lower():
                         leaked_entities.append(pii)
 
                 if leaked_entities:
@@ -170,12 +182,14 @@ def main():
                     "idx": i,
                     "user_query": ex.user_query,
                     "private_info": getattr(ex, 'private_info', []),
-                    "rewritten_query": pred.rewritten_query,
-                    "untrusted_response": pred.untrusted_response,
-                    "final_response": pred.final_response,
+                    "rewritten_query": rewritten_query,  # Using extracted variable
+                    "model_response": model_response,    # Using extracted variable
+                    "final_response": final_response,    # Using extracted variable
                     "reference_response": getattr(ex, 'reference_response', ''),
-                    "quality_score": float(quality),
-                    "leakage_score": float(leakage),
+                    "quality_score": int(quality),  # Binary 0/1
+                    "leakage_count": int(leakage_count),  # Count
+                    "num_pii": num_pii,
+                    "prompt_quality_score": int(prompt_qual),  # Binary 0/1
                     "aggregate_score": float(aggregate),
                     "latency_sec": float(dt),
                 }

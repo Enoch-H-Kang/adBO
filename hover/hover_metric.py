@@ -13,7 +13,10 @@ def normalize_title(t: str) -> str:
 
 def hover_recall_score(gold, pred, trace=None) -> float:
     """
-    Fraction of gold titles present anywhere in pred.titles.
+    Discrete retrieval evaluation (matching LangProbe).
+    Returns 1.0 if ALL gold titles are retrieved, 0.0 otherwise.
+
+    This is stricter than continuous recall and matches the GEPA paper setup.
     """
     gold_titles = {normalize_title(t) for t in getattr(gold, "titles", [])}
     pred_titles = {normalize_title(t) for t in getattr(pred, "titles", [])}
@@ -21,7 +24,8 @@ def hover_recall_score(gold, pred, trace=None) -> float:
     if not gold_titles:
         return 0.0
 
-    return len(gold_titles & pred_titles) / len(gold_titles)
+    # Discrete evaluation: 1.0 only if all gold docs retrieved
+    return 1.0 if gold_titles.issubset(pred_titles) else 0.0
 
 
 def hover_feedback_text(gold, pred) -> str:
@@ -71,18 +75,26 @@ def build_best_so_far_curve_from_detailed_results(detailed_results, baseline_sco
     curve = []
     best = float("-inf")
 
+    # DSPy 3.1.0b1 Evaluate returns percentages (0-100), but GEPA val_aggregate_scores
+    # are in decimal form (0-1). Detect scale and normalize to percentages.
+    # If baseline is > 1.5, it's already a percentage, so scale candidates by 100
+    baseline_is_percentage = baseline_score is not None and baseline_score > 1.5
+    scale_factor = 100.0 if baseline_is_percentage else 1.0
+
     if baseline_score is not None:
         best = baseline_score
         curve.append(dict(rollouts=0, candidate_idx=None, candidate_val_score=baseline_score, best_val_score=best))
 
     for cand_idx, rollouts, cand_score in triples:
-        if cand_score > best:
-            best = cand_score
+        # Convert candidate score to same scale as baseline
+        scaled_score = cand_score * scale_factor
+        if scaled_score > best:
+            best = scaled_score
         curve.append(
             dict(
                 rollouts=int(rollouts),
                 candidate_idx=int(cand_idx),
-                candidate_val_score=float(cand_score),
+                candidate_val_score=float(scaled_score),
                 best_val_score=float(best),
             )
         )
