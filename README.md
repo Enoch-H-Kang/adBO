@@ -1,6 +1,6 @@
 # GEPA Implementation Suite
 
-Complete implementation of GEPA (Generalized Editing for Program Adaptation) for four benchmarks: HotpotQA, PUPA, IFBench, and HoVER.
+Complete implementation of GEPA (Generalized Editing for Program Adaptation) for four benchmarks: HotpotQA, PUPA, and HoVER.
 
 ## Projects
 
@@ -18,14 +18,7 @@ Complete implementation of GEPA (Generalized Editing for Program Adaptation) for
 - **Metric:** Quality + (1 - PII Leakage)
 - **Documentation:** `pupa/README.md`, `pupa/DATA_SETUP.md`
 
-### 3. IFBench - Instruction Following
-- **Location:** `/work1/krishnamurthy/arvind/adBO/ifbench/`
-- **Task:** Follow complex multi-constraint instructions
-- **Data:** 100 train / 100 dev / 100 test (auto-loads)
-- **Metric:** Constraint satisfaction (placeholder)
-- **Documentation:** `ifbench/FIXES.md`
-
-### 4. HoVER - Fact Verification with Multi-hop Retrieval
+### 3. HoVER - Fact Verification with Multi-hop Retrieval
 - **Location:** `/work1/krishnamurthy/arvind/adBO/hover/`
 - **Task:** Verify claims by retrieving supporting Wikipedia documents (3-hop retrieval)
 - **Data:** 150 train / 300 dev / 300 test (auto-loads from HuggingFace)
@@ -48,7 +41,6 @@ python check_dependencies.py
 
 **HotpotQA:** Auto-downloads on first run
 **PUPA:** Run `cd pupa && ./setup_pupa_data.sh`
-**IFBench:** Auto-loads from HuggingFace
 **HoVER:** Auto-loads from HuggingFace (vincentkoc/hover-parquet)
 
 ### 3. Run Experiments
@@ -61,10 +53,6 @@ sbatch job.hotpotqa_compare.sbatch
 # PUPA
 cd pupa
 sbatch job.pupa_compare.sbatch
-
-# IFBench
-cd ifbench
-sbatch job.ifbench_compare.sbatch
 
 # HoVER
 cd hover
@@ -126,11 +114,6 @@ adBO/
 │   ├── convert_pupa_data.py    # CSV to JSON converter
 │   └── run_gepa_pupa.py        # GEPA training
 │
-├── ifbench/            # Instruction following
-│   ├── ifbench_program.py      # 2-stage constraint-aware
-│   ├── ifbench_metric.py       # Constraint checking
-│   └── run_gepa_ifbench.py     # GEPA training
-│
 ├── hover/              # Fact verification with retrieval
 │   ├── hover_program.py        # 3-hop retrieval pipeline
 │   ├── hover_metric.py         # Recall score + feedback
@@ -190,36 +173,12 @@ export VLLM_MODEL="Qwen/Qwen3-8B"
 
 SLURM jobs start vLLM automatically.
 
-## Recent Fixes
-
-### README (2026-01-06)
-- ✅ Added HoVER as 4th benchmark project
-- ✅ Updated documentation to include HoVER setup and usage
-- ✅ Added HoVER to architecture diagram and references
-
-### PUPA (2025-12-29)
-- ✅ Fixed dataset loading (CSV → JSON conversion)
-- ✅ Created automated setup script
-- ✅ Fixed GEPA metric signature (5 args, return Prediction)
-- ✅ Improved quality evaluation (LLM-as-judge)
-
-### IFBench (2025-12-29)
-- ✅ Fixed data loading (KeyError: 'response')
-- ✅ Updated metric for instruction-following task
-- ✅ Added proper constraint feedback
-
-### Dependencies (2025-12-29)
-- ✅ Verified all 15 packages installed
-- ✅ Added scikit-learn
-- ✅ Created comprehensive documentation
-
 ## References
 
 - **GEPA Paper:** (citations in project READMEs)
 - **HotpotQA:** https://hotpotqa.github.io/
 - **PUPA:** https://aclanthology.org/2025.naacl-long.173.pdf
 - **PAPILLON:** https://github.com/Columbia-NLP-Lab/PAPILLON/
-- **IFBench:** https://arxiv.org/abs/2311.07911
 - **HoVER:** https://hover-nlp.github.io/
 
 ## Support
@@ -227,7 +186,6 @@ SLURM jobs start vLLM automatically.
 1. Check project-specific documentation:
    - `hotpotqa/README.md`
    - `pupa/README.md` and `pupa/DATA_SETUP.md`
-   - `ifbench/FIXES.md`
    - `hover/ADAPTATION_SUMMARY.md`
 
 2. Run dependency checker:
