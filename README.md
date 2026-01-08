@@ -1,228 +1,85 @@
-# GEPA Implementation Suite
+# Digital Twin Simulation
 
-Complete implementation of GEPA (Generalized Editing for Program Adaptation) for three benchmarks: HotpotQA, PUPA, and IFBench.
+This repository contains code for simulating digital twins using Large Language Models (LLMs), for the purpose of reproducing the experiments in Twin-2K-500 (paper coming out soon). The project focuses on creating and simulating digital twins based on persona profiles and survey responses.
 
-## Projects
+## Overview
 
-### 1. HotpotQA - Multi-hop Question Answering
-- **Location:** `/work1/krishnamurthy/arvind/adBO/hotpotqa/`
-- **Task:** Answer questions requiring multi-hop reasoning over Wikipedia abstracts
-- **Data:** 150 train / 300 dev / 300 test (auto-downloads)
-- **Metric:** Exact Match (EM) score
-- **Documentation:** `hotpotqa/README.md`
+The digital twin simulation system creates virtual representations of individuals based on their survey responses and simulates their behavior in response to new survey questions. The system uses LLMs to generate realistic responses that maintain consistency with the original persona profiles.
 
-### 2. PUPA - Privacy-Conscious Delegation
-- **Location:** `/work1/krishnamurthy/arvind/adBO/pupa/`
-- **Task:** Privacy-preserving LLM delegation (remove PII while maintaining quality)
-- **Data:** 111 train / 111 dev / 221 test (requires setup)
-- **Metric:** Quality + (1 - PII Leakage)
-- **Documentation:** `pupa/README.md`, `pupa/DATA_SETUP.md`
+## Project Structure
 
-### 3. IFBench - Instruction Following
-- **Location:** `/work1/krishnamurthy/arvind/adBO/ifbench/`
-- **Task:** Follow complex multi-constraint instructions
-- **Data:** 100 train / 100 dev / 100 test (auto-loads)
-- **Metric:** Constraint satisfaction (placeholder)
-- **Documentation:** `ifbench/FIXES.md`
+```
+.
+├── text_simulation/           # Main simulation code
+│   ├── configs/              # Configuration files
+│   ├── text_personas/        # Persona profile data
+│   ├── text_questions/       # Survey questions
+│   ├── text_simulation_input/ # Combined input files
+│   └── text_simulation_output/ # Simulation results
+├── evaluation/                # Evaluation folder  
+├── scripts/                  # Utility scripts
+├── data/                     # Raw data
+└── cache/                    # Cached data
+```
 
-## Quick Start
+## Key Components
 
-### 1. Check Dependencies ✅
+1. **Persona Processing**
+   - `convert_persona_to_text.py`: Converts persona data to text format
+   - `batch_convert_personas.py`: Batch processes multiple personas
 
+2. **Question Processing**
+   - `convert_question_json_to_text.py`: Converts question data to text format
+
+3. **Simulation**
+   - `create_text_simulation_input.py`: Combines personas with questions
+   - `run_LLM_simulations.py`: Runs the actual LLM simulations
+   - `llm_helper.py`: Helper functions for LLM interactions
+   - `postprocess_responses.py`: Processes and analyzes simulation results
+
+## Requirements
+
+- Python 3.11.7 or higher
+- Poetry for dependency management
+
+## Installation
+
+1. Clone the repository:
 ```bash
-cd /work1/krishnamurthy/arvind/adBO
-source $WORK/venv/hotpotqa2/bin/activate
-python check_dependencies.py
+git clone [repository-url]
+cd digital-twin-simulation
 ```
 
-**Status:** All 15 required packages are installed and verified!
-
-### 2. Setup Data
-
-**HotpotQA:** Auto-downloads on first run
-**PUPA:** Run `cd pupa && ./setup_pupa_data.sh`
-**IFBench:** Auto-loads from HuggingFace
-
-### 3. Run Experiments
-
+2. Install dependencies using Poetry:
 ```bash
-# HotpotQA
-cd hotpotqa
-sbatch job.hotpotqa_compare.sbatch
-
-# PUPA
-cd pupa
-sbatch job.pupa_compare.sbatch
-
-# IFBench
-cd ifbench
-sbatch job.ifbench_compare.sbatch
+poetry install
 ```
 
-## Documentation
+## Usage
 
-- **📖 QUICKSTART.md** - Quick reference guide
-- **📖 INSTALLATION.md** - Complete installation guide
-- **📖 DEPENDENCIES_SUMMARY.md** - Current dependency status
-- **📄 requirements.txt** - All dependencies
+To run the digital twin simulations, follow these steps:
 
-## Dependencies
+1.  **Prepare the Data**:
+    First, download the necessary dataset by executing the following command:
+    ```bash
+    poetry run python download_dataset.py
+    ```
 
-All installed and verified (see `DEPENDENCIES_SUMMARY.md`):
+2.  **Configure API Access**:
+    Set the `OPENAI_API_KEY` environment variable to enable LLM interactions. Create a file named `.env` in the project's root directory and add your API key as follows:
+    ```
+    OPENAI_API_KEY=your_actual_api_key_here
+    ```
+    *Replace `your_actual_api_key_here` with your valid OpenAI API key.*
 
-**Core:** dspy-ai, datasets, transformers, huggingface-hub
-**Retrieval:** bm25s, PyStemmer
-**Data:** ujson, pandas, numpy
-**Visualization:** matplotlib
-**HTTP:** requests, httpx
-**Utilities:** tqdm, scikit-learn, scipy
+3.  **Run the Simulation Pipeline**:
+    Execute the main simulation pipeline using the provided shell scripts. You can run a small test with a limited number of personas or simulate all available personas.
 
-## Features
-
-### GEPA Variants
-
-Each project supports 3 GEPA variants:
-1. **GEPA** - Baseline
-2. **GEPA+merge** - With parameter merging
-3. **GEPA bon=5 itr=5** - With best-of-N sampling and iterations
-
-### Outputs
-
-Each run produces:
-- `curve.csv` - Learning curve (rollouts vs score)
-- `summary.json` - Final scores and metadata
-- `config.json` - Run configuration
-- `gepa_logs/` - Detailed optimization logs
-
-Comparison runs also generate:
-- `comparison.png` - Learning curves plot
-- `comparison_curves.csv` - Merged data
-
-## Architecture
-
-```
-adBO/
-├── hotpotqa/           # Multi-hop QA over Wikipedia
-│   ├── hotpot_program.py       # 2-hop retrieval + reasoning
-│   ├── hotpot_metric.py        # EM score + feedback
-│   ├── wiki_retriever.py       # BM25 over wiki abstracts
-│   └── run_gepa_hotpotqa.py    # GEPA training
-│
-├── pupa/               # Privacy-conscious delegation
-│   ├── pupa_program.py         # 3-stage PAPILLON pipeline
-│   ├── pupa_metric.py          # Quality + leakage metrics
-│   ├── convert_pupa_data.py    # CSV to JSON converter
-│   └── run_gepa_pupa.py        # GEPA training
-│
-├── ifbench/            # Instruction following
-│   ├── ifbench_program.py      # 2-stage constraint-aware
-│   ├── ifbench_metric.py       # Constraint checking
-│   └── run_gepa_ifbench.py     # GEPA training
-│
-├── requirements.txt            # All dependencies
-├── check_dependencies.py       # Dependency checker
-└── README.md                   # This file
-```
-
-## Usage Examples
-
-### Single Run
-
-```bash
-cd hotpotqa
-python run_gepa_hotpotqa.py \
-  --run_dir ./runs/test \
-  --max_metric_calls 1000 \
-  --num_threads 12
-```
-
-### Comparison (3 variants)
-
-```bash
-cd hotpotqa
-python run_gepa_hotpotqa_compare.py \
-  --out_root ./runs/comparison \
-  --api_bases "http://127.0.0.1:8000/v1" \
-  --max_metric_calls 5000
-```
-
-### SLURM Batch
-
-```bash
-sbatch job.hotpotqa_compare.sbatch
-```
-
-## vLLM Setup
-
-All experiments require vLLM server:
-
-```bash
-# Start server
-vllm serve Qwen/Qwen3-8B \
-  --host 0.0.0.0 --port 8000 \
-  --api-key EMPTY \
-  --max-model-len 16384
-
-# Set environment
-export VLLM_API_BASE="http://127.0.0.1:8000/v1"
-export VLLM_API_KEY="EMPTY"
-export VLLM_MODEL="Qwen/Qwen3-8B"
-```
-
-SLURM jobs start vLLM automatically.
-
-## Recent Fixes
-
-### PUPA (2025-12-29)
-- ✅ Fixed dataset loading (CSV → JSON conversion)
-- ✅ Created automated setup script
-- ✅ Fixed GEPA metric signature (5 args, return Prediction)
-- ✅ Improved quality evaluation (LLM-as-judge)
-
-### IFBench (2025-12-29)
-- ✅ Fixed data loading (KeyError: 'response')
-- ✅ Updated metric for instruction-following task
-- ✅ Added proper constraint feedback
-
-### Dependencies (2025-12-29)
-- ✅ Verified all 15 packages installed
-- ✅ Added scikit-learn
-- ✅ Created comprehensive documentation
-
-## References
-
-- **GEPA Paper:** (citations in project READMEs)
-- **HotpotQA:** https://hotpotqa.github.io/
-- **PUPA:** https://aclanthology.org/2025.naacl-long.173.pdf
-- **PAPILLON:** https://github.com/Columbia-NLP-Lab/PAPILLON/
-- **IFBench:** https://arxiv.org/abs/2311.07911
-
-## Support
-
-1. Check project-specific documentation:
-   - `hotpotqa/README.md`
-   - `pupa/README.md` and `pupa/DATA_SETUP.md`
-   - `ifbench/FIXES.md`
-
-2. Run dependency checker:
-   ```bash
-   python check_dependencies.py
-   ```
-
-3. Read installation guide:
-   ```bash
-   cat INSTALLATION.md
-   ```
-
-4. Quick reference:
-   ```bash
-   cat QUICKSTART.md
-   ```
-
-## Status
-
-✅ **All dependencies installed**
-✅ **All projects tested and working**
-✅ **Ready to run experiments**
-
-Last updated: 2025-12-29
+    *   For a small test run (e.g., 5 personas):
+        ```bash
+        ./scripts/run_pipeline.sh --max_personas=5
+        ```
+    *   To run the simulation for all 2058 personas:
+        ```bash
+        ./scripts/run_pipeline.sh
+        ```
