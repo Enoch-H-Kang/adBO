@@ -9,21 +9,21 @@ Codes for experimenting GEPA (https://arxiv.org/abs/2507.19457) and its variant 
 ## Projects
 
 ### 1. HotpotQA - Multi-hop Question Answering
-- **Location:** `/work1/krishnamurthy/arvind/adBO/hotpotqa/`
+- **Location:** `/hotpotqa/`
 - **Task:** Answer questions requiring multi-hop reasoning over Wikipedia abstracts
 - **Data:** 150 train / 300 dev / 300 test (auto-downloads)
 - **Metric:** Exact Match (EM) score
 - **Documentation:** `hotpotqa/README.md`
 
 ### 2. PUPA - Privacy-Conscious Delegation
-- **Location:** `/work1/krishnamurthy/arvind/adBO/pupa/`
+- **Location:** `/pupa/`
 - **Task:** Privacy-preserving LLM delegation (remove PII while maintaining quality)
 - **Data:** 111 train / 111 dev / 221 test (requires setup)
 - **Metric:** Quality + (1 - PII Leakage)
 - **Documentation:** `pupa/README.md`, `pupa/DATA_SETUP.md`
 
 ### 3. HoVER - Fact Verification with Multi-hop Retrieval
-- **Location:** `/work1/krishnamurthy/arvind/adBO/hover/`
+- **Location:** `/hover/`
 - **Task:** Verify claims by retrieving supporting Wikipedia documents (3-hop retrieval)
 - **Data:** 150 train / 300 dev / 300 test (auto-loads from HuggingFace)
 - **Metric:** Recall score (1.0 if all gold documents retrieved)
@@ -34,7 +34,6 @@ Codes for experimenting GEPA (https://arxiv.org/abs/2507.19457) and its variant 
 ### 1. Check Dependencies ✅
 
 ```bash
-cd /work1/krishnamurthy/arvind/adBO
 source $WORK/venv/hotpotqa2/bin/activate
 python check_dependencies.py
 ```
@@ -105,7 +104,7 @@ Comparison runs also generate:
 ## Architecture
 
 ```
-adBO/
+folder/
 ├── hotpotqa/           # Multi-hop QA over Wikipedia
 │   ├── hotpot_program.py       # 2-hop retrieval + reasoning
 │   ├── hotpot_metric.py        # EM score + feedback
