@@ -1,6 +1,6 @@
 # GEPA Implementation Suite
 
-Complete implementation of GEPA (Generalized Editing for Program Adaptation) for four benchmarks: HotpotQA, PUPA, and HoVER.
+Codes for experimenting GEPA (https://arxiv.org/abs/2507.19457) and its variant TextBO-GEPA (https://arxiv.org/abs/2511.12063) for three benchmarks: HotpotQA, PUPA, and HoVER.
 
 ## Projects
 
